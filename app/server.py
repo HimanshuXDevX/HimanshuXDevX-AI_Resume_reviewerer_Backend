@@ -21,10 +21,14 @@ logger = logging.getLogger("uvicorn.error")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Initializing database...")
+    logger.info("🚀 Initializing database...")
     await init_db()
+    logger.info("✅ Database initialized successfully")
+    from app.routers.resume import router as resume_router
+    app.include_router(resume_router, prefix="/api")
+
     yield
-    logger.info("Shutdown complete.")
+    logger.info("🛑 Application shutdown complete.")
 
 # FastAPI app
 app = FastAPI(
