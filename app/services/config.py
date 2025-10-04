@@ -4,7 +4,6 @@ from pydantic import field_validator
 
 class Settings(BaseSettings):
     PORT: int = 8000
-    API_PREFIX: str = "/api"
     DEBUG: bool = False
     GEMINI_API_KEY: str
     ALLOWED_ORIGINS: str = ""
