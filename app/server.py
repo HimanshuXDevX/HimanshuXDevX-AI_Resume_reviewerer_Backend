@@ -11,6 +11,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.services.config import settings
 from app.utils.db import init_db
 from app.routers.resume import router as resume_router
+from contextlib import asynccontextmanager
 
 load_dotenv()
 
@@ -18,16 +19,26 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("uvicorn.error")
 
-# FastAPI app
+# Lifespan: ensures DB is initialized before serving any requests
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("🚀 Initializing database...")
+    await init_db()
+    logger.info("✅ Database initialized successfully")
+    yield
+    logger.info("🛑 Application shutdown complete.")
+
+# FastAPI app with lifespan
 app = FastAPI(
     title="AI Resume Reviewer",
     description="ATS-friendly resume analysis",
     version="0.1.0",
     redoc_url="/redoc",
     docs_url="/docs",
+    lifespan=lifespan
 )
 
-# Include routers immediately so they show in docs
+# Include routers immediately (they will appear in docs)
 app.include_router(resume_router, prefix="/api")
 
 # Rate limiting configuration
@@ -57,13 +68,6 @@ cloudinary.config(
 @limiter.limit("100/minute")
 def read_root(request: Request):
     return {"message": "Welcome to AI Resume Reviewer"}
-
-# Startup event to initialize DB
-@app.on_event("startup")
-async def on_startup():
-    logger.info("🚀 Initializing database...")
-    await init_db()
-    logger.info("✅ Database initialized successfully")
 
 # Run server
 if __name__ == "__main__":
