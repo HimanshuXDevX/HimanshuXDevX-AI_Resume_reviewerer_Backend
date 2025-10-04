@@ -4,31 +4,19 @@ import cloudinary
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from slowapi import _rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler, Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from slowapi.middleware import SlowAPIMiddleware
 from app.services.config import settings
 from app.utils.db import init_db
-from app.routers.resume import router as resume
-from contextlib import asynccontextmanager
+from app.routers.resume import router as resume_router
 
 load_dotenv()
 
 # Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("uvicorn.error")
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    logger.info("🚀 Initializing database...")
-    await init_db()
-    logger.info("✅ Database initialized successfully")
-    from app.routers.resume import router as resume_router
-    app.include_router(resume_router, prefix="/api")
-
-    yield
-    logger.info("🛑 Application shutdown complete.")
 
 # FastAPI app
 app = FastAPI(
@@ -37,17 +25,12 @@ app = FastAPI(
     version="0.1.0",
     redoc_url="/redoc",
     docs_url="/docs",
-    lifespan=lifespan
 )
 
 # Rate limiting configuration
-from slowapi import Limiter
-
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-# Add SlowAPI middleware for rate limiting
 app.add_middleware(SlowAPIMiddleware)
 
 # CORS middleware
@@ -59,19 +42,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Cloudinary configuration
 cloudinary.config(
     cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
     api_key=os.getenv("CLOUDINARY_API_KEY"),
     api_secret=os.getenv("CLOUDINARY_API_SECRET")
 )
 
-# Apply rate limiting to root endpoint
+# Root endpoint
 @app.get("/")
 @limiter.limit("100/minute")
 def read_root(request: Request):
     return {"message": "Welcome to AI Resume Reviewer"}
 
-# Run server directly
+# Startup event to initialize DB and include routers
+@app.on_event("startup")
+async def on_startup():
+    logger.info("🚀 Initializing database...")
+    await init_db()
+    logger.info("✅ Database initialized successfully")
+    # Include router after DB is ready
+    app.include_router(resume_router, prefix="/api")
+    logger.info("📌 Resume router included under /api")
+
+# Run server
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8080))
