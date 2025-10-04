@@ -197,7 +197,6 @@ async def get_user_resumes(request: Request):
 
         # Fallback to MongoDB if Redis has nothing
         if not resumes:
-            from models.user import User
             logger.info(f"No Redis cache found for user {clerk_id}. Checking MongoDB...")
             user = await User.find_one({"clerk_id": clerk_id})
             if user:
