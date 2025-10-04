@@ -27,6 +27,9 @@ app = FastAPI(
     docs_url="/docs",
 )
 
+# Include routers immediately so they show in docs
+app.include_router(resume_router, prefix="/api")
+
 # Rate limiting configuration
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
@@ -55,15 +58,12 @@ cloudinary.config(
 def read_root(request: Request):
     return {"message": "Welcome to AI Resume Reviewer"}
 
-# Startup event to initialize DB and include routers
+# Startup event to initialize DB
 @app.on_event("startup")
 async def on_startup():
     logger.info("🚀 Initializing database...")
     await init_db()
     logger.info("✅ Database initialized successfully")
-    # Include router after DB is ready
-    app.include_router(resume_router, prefix="/api")
-    logger.info("📌 Resume router included under /api")
 
 # Run server
 if __name__ == "__main__":
