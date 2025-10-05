@@ -4,7 +4,7 @@ from app.services.generator import ResumeReviewGenerator
 from app.models.user import User, Feedback
 from app.services.cache import redis_client
 from app.utils.auth import authenticate_and_get_user_details
-from app.utils.db import init_db
+# from app.utils.db import init_db
 import uuid, json, logging
 import cloudinary.uploader
 
@@ -16,12 +16,12 @@ router = APIRouter(
 )
 
 # Ensure DB is initialized before using
-async def ensure_db_initialized():
-    try:
-        await init_db()
-        logger.info("Beanie DB initialized.")
-    except Exception as e:
-        logger.warning(f"DB initialization failed: {repr(e)}")
+# async def ensure_db_initialized():
+#     try:
+#         await init_db()
+#         logger.info("Beanie DB initialized.")
+#     except Exception as e:
+#         logger.warning(f"DB initialization failed: {repr(e)}")
 
 
 @router.post("/analyze", response_model=dict)
@@ -32,7 +32,7 @@ async def analyze_resume(
     resume: UploadFile = File(...),
 ):
     try:
-        await ensure_db_initialized()
+        # await ensure_db_initialized()
 
         logger.info("Start resume analysis")
 
@@ -119,7 +119,7 @@ async def analyze_resume(
 @router.get("/resume-feedback/{resume_id}", response_model=dict)
 async def get_resume_feedback(resume_id: str):
     try:
-        await ensure_db_initialized()
+        # await ensure_db_initialized()
         redis_key = f"resume:{resume_id}"
         data = redis_client.get(redis_key)
         if not data:
@@ -143,7 +143,7 @@ async def get_resume_feedback(resume_id: str):
 @router.get("/user-resumes", response_model=list[dict])
 async def get_user_resumes(request: Request):
     try:
-        await ensure_db_initialized()
+        # await ensure_db_initialized()
         user_details = authenticate_and_get_user_details(request)
         clerk_id = user_details.get("user_id")
 

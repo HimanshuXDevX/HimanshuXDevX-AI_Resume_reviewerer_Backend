@@ -3,7 +3,7 @@ from app.models.user import User
 from svix.webhooks import Webhook
 import os, json, logging
 from datetime import datetime
-from app.utils.db import init_db
+# from app.utils.db import init_db
 
 router = APIRouter()
 logger = logging.getLogger("uvicorn.error")
@@ -12,7 +12,7 @@ logger = logging.getLogger("uvicorn.error")
 # Ensure MongoDB (Beanie) initialization before using models
 async def ensure_db_initialized():
     try:
-        await init_db()
+        # await init_db()
         logger.info("✅ Beanie DB initialized successfully.")
     except Exception as e:
         logger.error(f"⚠️ Beanie initialization failed: {repr(e)}")
