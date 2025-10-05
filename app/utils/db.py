@@ -15,10 +15,6 @@ _db_lock = asyncio.Lock()
 _client = None
 
 async def init_db():
-    """
-    Initialize MongoDB connection and Beanie models.
-    Safe to call multiple times (serverless-friendly).
-    """
     global _db_initialized, _client
     async with _db_lock:
         if _db_initialized:
