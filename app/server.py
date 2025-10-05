@@ -10,7 +10,7 @@ import cloudinary
 from dotenv import load_dotenv
 
 from app.services.config import settings
-from app.utils.db import init_db
+# from app.utils.db import init_db
 from app.routers.resume import router as resume_router
 from app.routers.clerk import router as clerk_router
 
@@ -64,14 +64,14 @@ def read_root(request: Request):
 
 
 # Initialize DB at startup (local runs only)
-@app.on_event("startup")
-async def start_db():
-    try:
-        logger.info("🚀 Initializing database (startup)...")
-        await init_db()
-        logger.info("✅ Database initialized successfully.")
-    except Exception as e:
-        logger.error(f"❌ Database initialization failed: {repr(e)}")
+# @app.on_event("startup")
+# async def start_db():
+#     try:
+#         logger.info("🚀 Initializing database (startup)...")
+#         await init_db()
+#         logger.info("✅ Database initialized successfully.")
+#     except Exception as e:
+#         logger.error(f"❌ Database initialization failed: {repr(e)}")
 
 
 # Local run entrypoint
