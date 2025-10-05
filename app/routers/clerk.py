@@ -25,12 +25,11 @@ async def handle_clerk_webhook(request: Request):
     if not webhook_secret:
         raise HTTPException(status_code=500, detail="CLERK_WEBHOOK_SECRET not configured")
 
-    # Read the raw body (must remain unmodified for Svix verification)
     body = await request.body()
     payload = body.decode("utf-8")
     headers = dict(request.headers)
 
-    # Check for presence of Svix headers
+    # Check for required Svix headers
     if not all(h in headers for h in ["svix-id", "svix-timestamp", "svix-signature"]):
         logger.error("❌ Missing required Svix headers")
         raise HTTPException(status_code=400, detail="Missing Svix headers")
@@ -39,11 +38,11 @@ async def handle_clerk_webhook(request: Request):
         # Ensure database is ready
         await ensure_db_initialized()
 
-        # Verify the webhook signature
+        # Verify webhook signature
         wh = Webhook(webhook_secret)
         wh.verify(payload, headers)
 
-        # Parse and process event
+        # Parse the webhook event
         event = json.loads(payload)
 
         if event.get("type") != "user.created":
@@ -52,35 +51,38 @@ async def handle_clerk_webhook(request: Request):
 
         user_data = event.get("data", {})
 
-        # Extract user details from the nested `data` field
-        clerk_id = user_data.get("id")
-        email = user_data.get("email_addresses", [{}])[0].get("email_address")
+        # Safe extraction of nested arrays
+        email_addresses = user_data.get("email_addresses") or []
+        phone_numbers = user_data.get("phone_numbers") or []
+
+        email = email_addresses[0].get("email_address") if email_addresses else None
+        phone = phone_numbers[0].get("phone_number") if phone_numbers else None
         first_name = user_data.get("first_name")
         last_name = user_data.get("last_name")
-        phone = user_data.get("phone_numbers", [{}])[0].get("phone_number")
         profile_img = user_data.get("profile_image_url")
+        clerk_id = user_data.get("id")
 
-        # Ensure essential fields exist
+        # Skip if essential data missing
         if not clerk_id or not email:
-            logger.error("⚠️ Invalid user data received from Clerk webhook")
-            raise HTTPException(status_code=400, detail="Invalid user data")
+            logger.warning(f"⚠️ Skipping user with missing essential data: {clerk_id}")
+            return {"status": "ignored"}
 
-        # Check if user already exists
+        # Check if user exists
         user = await User.find_one(User.clerk_id == clerk_id)
         now = datetime.utcnow()
 
         if user:
-            # Update existing user
+            # Update existing user safely
             user.email = email
-            user.first_name = first_name
-            user.last_name = last_name
-            user.phone_number = phone
-            user.profile_image_url = profile_img
+            user.first_name = first_name or user.first_name
+            user.last_name = last_name or user.last_name
+            user.phone_number = phone or user.phone_number
+            user.profile_image_url = profile_img or user.profile_image_url
             user.updated_at = now
             await user.save()
             logger.info(f"🔁 Updated existing user: {clerk_id}")
         else:
-            # Create a new user document
+            # Create new user
             new_user = User(
                 clerk_id=clerk_id,
                 email=email,
