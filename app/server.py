@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from app.services.config import settings
 from app.utils.db import init_db
 from app.routers.resume import router as resume_router
+from app.routers.clerk import router as clerk_router
 
 # Load environment variables
 load_dotenv()
@@ -31,6 +32,7 @@ app = FastAPI(
 
 # Include routers immediately so they appear in Swagger Docs
 app.include_router(resume_router, prefix="/api")
+app.include_router(clerk_router)
 
 # Rate limiting
 limiter = Limiter(key_func=get_remote_address)
