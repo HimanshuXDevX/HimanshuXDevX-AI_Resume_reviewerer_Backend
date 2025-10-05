@@ -5,9 +5,9 @@ from app.models.user import User, Feedback
 from app.services.cache import redis_client
 from app.utils.auth import authenticate_and_get_user_details
 from app.utils.db import init_db
-import uuid, json, os, logging
+import uuid, json, logging
 import cloudinary.uploader
-from beanie import DocumentInitializationError
+import beanie
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -18,11 +18,11 @@ router = APIRouter(
 
 async def ensure_db_initialized():
     try:
-        await init_db()
-    except DocumentInitializationError:
-        pass
+        if not beanie.Document.__database__:
+            await init_db()
+            logger.info(" Beanie database initialized.")
     except Exception as e:
-        logger.warning(f"⚠️ DB initialization skipped or already ready: {repr(e)}")
+        logger.warning(f" DB init check failed or already initialized: {repr(e)}")
 
 
 # POST: analyze resume, upload to Cloudinary, cache in Redis, save/update in MongoDB
