@@ -22,29 +22,33 @@ async def handle_clerk_webhook(request: Request):
     if not webhook_secret:
         raise HTTPException(status_code=500, detail="Webhook secret not configured")
 
-    # Read raw bytes
+    # Read raw body bytes
     body = await request.body()
-    headers = dict(request.headers)
-    signature_header = headers.get("Clerk-Signature") or headers.get("clerk-signature")
 
-    logger.info(f"Webhook headers: {headers}")
-    logger.info(f"Payload length: {len(body)} bytes")
+    # FastAPI headers are case-insensitive; map signature correctly
+    signature_header = request.headers.get("clerk-signature")
+    if not signature_header:
+        logger.error("Missing Clerk-Signature header")
+        raise HTTPException(status_code=400, detail="Missing Clerk-Signature header")
+
+    logger.info(f"Webhook received: {len(body)} bytes")
 
     try:
+        # Ensure DB is initialized before processing
         await ensure_db_initialized()
 
-        # Verify webhook using raw bytes and normalized header
+        # Verify webhook signature
         wh = Webhook(webhook_secret)
         wh.verify(body, {"Clerk-Signature": signature_header})
 
-        # Decode after verification
+        # Decode payload only after verification
         data = json.loads(body)
 
+        # Only process 'user.created' events
         if data.get("type") != "user.created":
-            logger.info("Webhook event ignored: not user.created")
+            logger.info("Webhook ignored: not a user.created event")
             return {"status": "ignored"}
 
-        # Extract fields from Clerk payload
         user_data = data.get("data", {})
         clerk_id = user_data.get("id")
         email = user_data.get("email_addresses", [{}])[0].get("email_address")
@@ -53,7 +57,7 @@ async def handle_clerk_webhook(request: Request):
         phone = user_data.get("phone_numbers", [{}])[0].get("phone_number")
         profile_img = user_data.get("profile_image_url")
 
-        # Upsert to avoid duplicates if webhook is re-sent
+        # Upsert: update existing or insert new user
         existing = await User.find_one(User.clerk_id == clerk_id)
         if existing:
             existing.email = email
