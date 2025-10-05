@@ -25,55 +25,62 @@ async def handle_clerk_webhook(request: Request):
     if not webhook_secret:
         raise HTTPException(status_code=500, detail="CLERK_WEBHOOK_SECRET not configured")
 
-    # Get raw body and signature header
+    # Read the raw body (must remain unmodified for Svix verification)
     body = await request.body()
-    signature_header = request.headers.get("clerk-signature")
+    payload = body.decode("utf-8")
+    headers = dict(request.headers)
 
-    if not signature_header:
-        logger.error("❌ Missing Clerk-Signature header")
-        raise HTTPException(status_code=400, detail="Missing Clerk-Signature header")
+    # Check for presence of Svix headers
+    if not all(h in headers for h in ["svix-id", "svix-timestamp", "svix-signature"]):
+        logger.error("❌ Missing required Svix headers")
+        raise HTTPException(status_code=400, detail="Missing Svix headers")
 
     try:
-        # Ensure DB is ready
+        # Ensure database is ready
         await ensure_db_initialized()
 
-        # Verify Clerk webhook
+        # Verify the webhook signature
         wh = Webhook(webhook_secret)
-        wh.verify(body, {"Clerk-Signature": signature_header})
+        wh.verify(payload, headers)
 
-        # Decode verified payload
-        event = json.loads(body)
-        event_type = event.get("type")
-        data = event.get("data", {})
+        # Parse and process event
+        event = json.loads(payload)
 
-        # Only process user.created event
-        if event_type != "user.created":
-            logger.info(f"ℹ️ Ignored event type: {event_type}")
+        if event.get("type") != "user.created":
+            logger.info(f"ℹ️ Ignored event type: {event.get('type')}")
             return {"status": "ignored"}
 
-        # Extract user details
-        clerk_id = data.get("id")
-        email = data.get("email_addresses", [{}])[0].get("email_address")
-        first_name = data.get("first_name")
-        last_name = data.get("last_name")
-        phone = data.get("phone_numbers", [{}])[0].get("phone_number")
-        profile_img = data.get("profile_image_url")
+        user_data = event.get("data", {})
+
+        # Extract user details from the nested `data` field
+        clerk_id = user_data.get("id")
+        email = user_data.get("email_addresses", [{}])[0].get("email_address")
+        first_name = user_data.get("first_name")
+        last_name = user_data.get("last_name")
+        phone = user_data.get("phone_numbers", [{}])[0].get("phone_number")
+        profile_img = user_data.get("profile_image_url")
+
+        # Ensure essential fields exist
+        if not clerk_id or not email:
+            logger.error("⚠️ Invalid user data received from Clerk webhook")
+            raise HTTPException(status_code=400, detail="Invalid user data")
 
         # Check if user already exists
         user = await User.find_one(User.clerk_id == clerk_id)
+        now = datetime.utcnow()
 
         if user:
-            # Update user
+            # Update existing user
             user.email = email
             user.first_name = first_name
             user.last_name = last_name
             user.phone_number = phone
             user.profile_image_url = profile_img
-            user.updated_at = datetime.utcnow()
+            user.updated_at = now
             await user.save()
             logger.info(f"🔁 Updated existing user: {clerk_id}")
         else:
-            # Create new user
+            # Create a new user document
             new_user = User(
                 clerk_id=clerk_id,
                 email=email,
@@ -81,8 +88,8 @@ async def handle_clerk_webhook(request: Request):
                 last_name=last_name,
                 phone_number=phone,
                 profile_image_url=profile_img,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
+                created_at=now,
+                updated_at=now,
             )
             await new_user.insert()
             logger.info(f"🆕 Created new user: {clerk_id}")
