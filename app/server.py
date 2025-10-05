@@ -13,13 +13,14 @@ from app.services.config import settings
 from app.utils.db import init_db
 from app.routers.resume import router as resume_router
 
+# Load environment variables
 load_dotenv()
 
 # Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("uvicorn.error")
 
-# FastAPI app
+# Create FastAPI app
 app = FastAPI(
     title="AI Resume Reviewer",
     description="ATS-friendly resume analysis",
@@ -28,7 +29,7 @@ app = FastAPI(
     docs_url="/docs",
 )
 
-# Include routers immediately so they show in docs
+# Include routers immediately so they appear in Swagger Docs
 app.include_router(resume_router, prefix="/api")
 
 # Rate limiting
@@ -37,7 +38,7 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
-# CORS middleware
+# CORS Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
@@ -46,7 +47,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Cloudinary configuration
+# Cloudinary config
 cloudinary.config(
     cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
     api_key=os.getenv("CLOUDINARY_API_KEY"),
@@ -59,14 +60,19 @@ cloudinary.config(
 def read_root(request: Request):
     return {"message": "Welcome to AI Resume Reviewer"}
 
-# Startup event: initialize DB
+
+# Initialize DB at startup (local runs only)
 @app.on_event("startup")
 async def start_db():
-    logger.info("🚀 Initializing database...")
-    await init_db()
-    logger.info("✅ Database initialized successfully")
+    try:
+        logger.info("🚀 Initializing database (startup)...")
+        await init_db()
+        logger.info("✅ Database initialized successfully.")
+    except Exception as e:
+        logger.error(f"❌ Database initialization failed: {repr(e)}")
 
-# Run server locally
+
+# Local run entrypoint
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8080))
