@@ -4,10 +4,9 @@ from app.services.generator import ResumeReviewGenerator
 from app.models.user import User, Feedback
 from app.services.cache import redis_client
 from app.utils.auth import authenticate_and_get_user_details
-from app.utils.db import init_db
+from app.utils.db import ensure_db_initialized
 import uuid, json, logging
 import cloudinary.uploader
-import beanie
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -16,16 +15,9 @@ router = APIRouter(
     tags=["Resume Analysis"]
 )
 
-async def ensure_db_initialized():
-    try:
-        if not beanie.Document.__database__:
-            await init_db()
-            logger.info(" Beanie database initialized.")
-    except Exception as e:
-        logger.warning(f" DB init check failed or already initialized: {repr(e)}")
-
-
-# POST: analyze resume, upload to Cloudinary, cache in Redis, save/update in MongoDB
+# -----------------------------
+# POST: analyze resume
+# -----------------------------
 @router.post("/analyze", response_model=dict)
 async def analyze_resume(
     request: Request,
@@ -34,17 +26,21 @@ async def analyze_resume(
     resume: UploadFile = File(...),
 ):
     try:
+        # Ensure DB is initialized safely
         await ensure_db_initialized()
 
         logger.info("Start resume analysis")
 
+        # Authenticate user
         user_details = authenticate_and_get_user_details(request)
         clerk_id = user_details.get("user_id")
         logger.info(f"Authenticated user with Clerk ID: {clerk_id}")
 
+        # Read resume file
         resume_bytes = await resume.read()
-        logger.info(f"Resume file read: {len(resume_bytes)} bytes, content_type={resume.content_type}, filename={resume.filename}")
+        logger.info(f"Resume file read: {len(resume_bytes)} bytes, filename={resume.filename}")
 
+        # Generate feedback
         try:
             feedback_data = ResumeReviewGenerator.review_resume(
                 file_bytes=resume_bytes,
@@ -59,6 +55,7 @@ async def analyze_resume(
 
         feedback_obj = Feedback(**feedback_data)
 
+        # Upload to Cloudinary
         try:
             logger.info("Uploading resume to Cloudinary")
             resume_result = cloudinary.uploader.upload(
@@ -73,9 +70,11 @@ async def analyze_resume(
             logger.exception("Cloudinary upload failed")
             raise HTTPException(status_code=500, detail=f"Cloudinary upload failed: {upload_error}")
 
+        # Generate image preview URL
         image_url = resume_url.replace("/upload/", "/upload/pg_1,f_png/")
         logger.info(f"Generated image URL for preview: {image_url}")
 
+        # Cache in Redis
         resume_id = str(uuid.uuid4())
         cache_data = {
             "clerk_id": clerk_id,
@@ -87,7 +86,8 @@ async def analyze_resume(
         }
         redis_client.setex(f"resume:{resume_id}", 60 * 60 * 24, json.dumps(cache_data))
         logger.info(f"Cached resume data in Redis under key: resume:{resume_id}")
-        
+
+        # Save/update in MongoDB
         user = await User.find_one({"clerk_id": clerk_id})
         if not user:
             logger.info("Creating new user entry in DB")
@@ -126,11 +126,14 @@ async def analyze_resume(
         raise HTTPException(status_code=500, detail=f"Error analyzing resume: {repr(e)}")
 
 
+# -----------------------------
 # GET: retrieve cached feedback by ID
+# -----------------------------
 @router.get("/resume-feedback/{resume_id}", response_model=dict)
 async def get_resume_feedback(resume_id: str):
     try:
         await ensure_db_initialized()
+
         logger.info(f"Fetching resume feedback for resume_id: {resume_id}")
 
         redis_key = f"resume:{resume_id}"
@@ -157,11 +160,14 @@ async def get_resume_feedback(resume_id: str):
         raise HTTPException(status_code=500, detail=f"Error retrieving data: {repr(e)}")
 
 
+# -----------------------------
 # GET: retrieve all resumes for authenticated user
+# -----------------------------
 @router.get("/user-resumes", response_model=list[dict])
 async def get_user_resumes(request: Request):
     try:
         await ensure_db_initialized()
+
         logger.info("Fetching resumes for authenticated user")
 
         user_details = authenticate_and_get_user_details(request)
@@ -171,6 +177,7 @@ async def get_user_resumes(request: Request):
         resumes = []
         keys_scanned = 0
 
+        # Fetch from Redis
         for key in redis_client.scan_iter("resume:*"):
             keys_scanned += 1
             data = redis_client.get(key)
@@ -197,6 +204,7 @@ async def get_user_resumes(request: Request):
 
         logger.info(f"Scanned {keys_scanned} Redis keys. Found {len(resumes)} resumes for user {clerk_id}")
 
+        # Fallback to MongoDB
         if not resumes:
             logger.info(f"No Redis cache found for user {clerk_id}. Checking MongoDB...")
             user = await User.find_one({"clerk_id": clerk_id})
